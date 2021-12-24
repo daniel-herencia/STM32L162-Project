@@ -519,8 +519,9 @@ void process_telecommand(uint8_t header, uint8_t info) {
 			tle[k-1]=Buffer[k];
 		}
 		Write_Flash(TLE_ADDR + tle_packets*UPLINK_BUFFER_SIZE, &tle, sizeof(tle));
-		tle_packets = tle_packets + 1;
-		if (tle_packets == 8){
+		tle_packets++;
+		uint8_t integer_part = (uint8_t) 138/UPLINK_BUFFER_SIZE;
+		if (tle_packets == integer_part+1){
 			tle_packets = 0;
 		}
 		break;
@@ -578,7 +579,8 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		}
 		Write_Flash(CALIBRATION_ADDR, &calib, sizeof(calib));
 		calib_packets = calib_packets + 1;
-		if(calib_packets == 6){
+		uint8_t integer_part = (uint8_t) 138/UPLINK_BUFFER_SIZE;
+		if(calib_packets == integer_part+1){
 			calib_packets = 0;
 		}
 		break;
