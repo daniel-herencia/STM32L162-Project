@@ -206,7 +206,7 @@ void packaging(void){
 
 	if (nack)
 	{
-		while(i<sizeof(ack) && nack_number != i-1)
+		while(i<sizeof(ack))
 		{
 			//function to obtain the packets to retx
 			if(!((ack >> i) & 1)) //When position of the ack & 1 != 1 --> its a 0 --> NACK
@@ -215,14 +215,15 @@ void packaging(void){
 				//Packet from last window => count_window - 1
 				Flash_Read_Data( PHOTO_ADDR + (count_window[0]-1)*WINDOW_SIZE*BUFFER_SIZE + (nack_number)*BUFFER_SIZE , &Buffer , sizeof(Buffer) );	//Direction in HEX
 				count_rtx[0]++;
+				i++;
+				break;	//Exits the while when the we find a packet to rtx
 			}
 			i++;
 		}
 		if (i==sizeof(ack)){
 			i=0;
-		}
-		else if (nack_number == i-1){
-			i++;
+			ack = 0xFFFFFFFFFFFFFFFF;
+			nack = false;
 		}
 	}
 	else //no NACKS
@@ -544,22 +545,25 @@ void process_telecommand(uint8_t header, uint8_t info) {
 	case ACKDATA:{
 		//check it
 	 	 ack = ack & Buffer[1];
-		 for(i=2; i<ACK_PAYLOAD_LENGTH; i++){
-			 ack = ack << 8 & Buffer[i];
+		 for(j=2; j<ACK_PAYLOAD_LENGTH; j++){
+			 ack = (ack << 8*j) & Buffer[j];
 		 }
 		 count_window[0] = 0;
 		 full_window = false;
+		 if (ack != 0xFFFFFFFFFFFFFFFF){
+			 nack = true;
+		 }
 		 State = TX;
 		break;
 	}
 	case SET_SF: {
 		uint8_t SF;
 		if (info == 0) SF = 7;
-		else if (info == 1) {uint8_t SF = 8;}
-		else if (info == 2) {uint8_t SF = 9;}
-		else if (info == 3) {uint8_t SF = 10;}
-		else if (info == 4) {uint8_t SF = 11;}
-		else if (info == 5) {uint8_t SF = 12;}
+		else if (info == 1) SF = 8;
+		else if (info == 2) SF = 9;
+		else if (info == 3) SF = 10;
+		else if (info == 4) SF = 11;
+		else if (info == 5) SF = 12;
 		Write_Flash(SF_ADDR, &SF, 1);
 		break;
 	}
@@ -609,7 +613,6 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		Write_Flash(INTEGRATION_TIME_ADDR, &info, 1);
 		break;
 	case SEND_CONFIG:{ //semicolon added in order to be able to declare SF here
-
 		uint8_t config[CONFIG_SIZE];
 		Read_Flash(CONFIG_ADDR, &config, CONFIG_SIZE);
 		//Send()
