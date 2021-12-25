@@ -67,6 +67,8 @@ bool full_window;				//Stop & wait => to know when we reach the limit packet of 
 bool statemach = true;			//If true, comms workflow follows the state machine. This value should be controlled by OBC
 								//Put true before activating the statemachine thread. Put false before ending comms thread
 bool send_data = false;			//If true, the state machin send packets every airtime
+bool send_telemetry = false;
+uint8_t telemetry_packets = 0;
 
 //uint8_t Buffer[BUFFER_SIZE];
 //bool PacketReceived = false;
@@ -224,6 +226,14 @@ void packaging(void){
 			i=0;
 			ack = 0xFFFFFFFFFFFFFFFF;
 			nack = false;
+		}
+	}
+	else if (send_telemetry){
+		Flash_Read_Data( TELEMETRY_ADDR + telemetry_packets*(UPLINK_BUFFER_SIZE-1) , &Buffer , sizeof(Buffer) );
+		Radio.Send( Buffer, BUFFER_SIZE );
+		telemetry_packets++;
+		if (telemetry_packets == num_telemetry){
+			send_telemetry = false;
 		}
 	}
 	else //no NACKS
@@ -536,8 +546,13 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		break;
 	}
 	case SENDTELEMETRY:{
+		/*
 		Flash_Read_Data( TELEMETRY_ADDR , &Buffer , sizeof(Buffer) );
 		Radio.Send( Buffer, BUFFER_SIZE );	//WE are not in the state machine => what happens if there is an error sending???
+		*/
+		send_telemetry = true;
+		State = TX;
+		uint8_t num_telemetry = (uint8_t) 34/BUFFER_SIZE + 1; //cast to integer to erase the decimal part
 		break;
 	}
 	case STOPSENDINGDATA:
