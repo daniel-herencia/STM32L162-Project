@@ -27,7 +27,8 @@
 
 /*------IMPORTANT----------*/
 /*
- * STATE CONTINGENCY ONLY RX
+ * STATE CONTINGENCY ONLY RX => from main setContingency(true)
+ * state sunsafe or survival => end comms thread
  * CHECK SLEEP MODE OF SX1262 WHILE NOT TX OR RX
  * MULTY THREAD
  * MATRIX OF READ-SALOMON => FADING IN SEVERAL PACKETS
@@ -59,6 +60,7 @@ uint8_t count_rtx[] = {0};		//To count the number of retransmitted packets
 uint8_t i = 0;					//Auxiliar variable for loop
 uint8_t j=0;
 uint8_t k=0;
+uint8_t num_telemetry = 0;
 
 uint64_t ack;					//Information rx in the ACK (FER DESPLAÇAMENTS DSBM)
 uint8_t nack_number;			//Number of the current packet to retransmit
@@ -69,6 +71,7 @@ bool statemach = true;			//If true, comms workflow follows the state machine. Th
 bool send_data = false;			//If true, the state machin send packets every airtime
 bool send_telemetry = false;
 uint8_t telemetry_packets = 0;
+bool contingency = false;
 
 //uint8_t Buffer[BUFFER_SIZE];
 //bool PacketReceived = false;
@@ -148,15 +151,18 @@ void configuration(void){
 
 	Radio.SetChannel( RF_FREQUENCY );
 
-	Radio.SetTxConfig( MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH,
-								   LORA_SPREADING_FACTOR, LORA_CODINGRATE,
+	uint8_t sf;
+	Read_Flash(SF_ADDR, &sf, 1);
+	uint8_t coding_rate;
+	Read_Flash(CRC_ADDR, &coding_rate, 1);
+
+	Radio.SetTxConfig( MODEM_LORA, TX_OUTPUT_POWER, 0, LORA_BANDWIDTH, sf, coding_rate,
 								   LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
 								   true, 0, 0, LORA_IQ_INVERSION_ON, TX_TIMEOUT_VALUE );	//In the original example it was 3000
 
 
 	//SHALL WE CARE ABOUT THE RX TIMEOUT VALUE??? IF YES, CHANGE IT IN SetRx FUNCTION
-	Radio.SetRxConfig( MODEM_LORA, LORA_BANDWIDTH, LORA_SPREADING_FACTOR,
-								   LORA_CODINGRATE, 0, LORA_PREAMBLE_LENGTH,
+	Radio.SetRxConfig( MODEM_LORA, LORA_BANDWIDTH, sf, coding_rate, 0, LORA_PREAMBLE_LENGTH,
 								   LORA_SYMBOL_TIMEOUT, LORA_FIX_LENGTH_PAYLOAD_ON,
 								   0, true, 0, 0, LORA_IQ_INVERSION_ON, true );
 
@@ -478,6 +484,10 @@ static void RxTimeoutTimerIrq( void )
     RxTimeoutTimerIrqFlag = true;
 }
 
+void setContingency(bool cont){
+	contingency = cont;
+}
+
 
 /**************************************************************************************
  *                                                                                    *
@@ -541,8 +551,10 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		Write_Flash(GYRO_RES_ADDR, &info, 1);
 		break;
 	case SENDDATA:{
-		State = TX;
-		send_data = true;
+		if (!contingency){
+			State = TX;
+			send_data = true;
+		}
 		break;
 	}
 	case SENDTELEMETRY:{
@@ -550,9 +562,11 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		Flash_Read_Data( TELEMETRY_ADDR , &Buffer , sizeof(Buffer) );
 		Radio.Send( Buffer, BUFFER_SIZE );	//WE are not in the state machine => what happens if there is an error sending???
 		*/
-		send_telemetry = true;
-		State = TX;
-		uint8_t num_telemetry = (uint8_t) 34/BUFFER_SIZE + 1; //cast to integer to erase the decimal part
+		if (!contingency){
+			send_telemetry = true;
+			num_telemetry = (uint8_t) 34/BUFFER_SIZE + 1; //cast to integer to erase the decimal part
+			State = TX;
+		}
 		break;
 	}
 	case STOPSENDINGDATA:

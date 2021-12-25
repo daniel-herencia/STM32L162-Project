@@ -183,7 +183,7 @@ void DisplayCadRssivsTime( void );
  */
 void SX126xConfigureCad( RadioLoRaCadSymbols_t cadSymbolNum, uint8_t cadDetPeak, uint8_t cadDetMin , uint32_t cadTimeout);
 
-
+void setContingency(bool cont);
 
 
 
