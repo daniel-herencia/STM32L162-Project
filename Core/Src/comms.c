@@ -25,60 +25,56 @@
 
 #include <comms.h>
 
-/*------IMPORTANT----------*/
+/*------TO DO----------*/
 /*
  * STATE CONTINGENCY ONLY RX => from main setContingency(true)
- * state sunsafe or survival => end comms thread
+ * state sunsafe or survival => end comms thread (in main)
  * CHECK SLEEP MODE OF SX1262 WHILE NOT TX OR RX
  * MULTY THREAD
  * MATRIX OF READ-SALOMON => FADING IN SEVERAL PACKETS
- * SF AND CRC STORED IN MEMORY AND CHANGED BY TELECOMMANDS
- * send sf and crc at telemetry packet
- * CAD_TIMER_TIMEOUT => CHANGE THE VALUE IN COMMS.H (and the next 6 definitions too)
- * When we call tx_function, there is an implicit loop to tx all the packets?? Check it
+ * Airtime timer
  */
 
-//#include "sx126x-hal.h"
+static RadioEvents_t RadioEvents;	//To handle Radio library functions
 
-static RadioEvents_t RadioEvents;	//SHOULD THIS BE IN MAIN??? IS TO HANDLE IRQ???
+uint32_t air_time;					//LoRa air time value
+uint8_t Buffer[BUFFER_SIZE];		//Buffer to store received packets or the next packet to transit
 
-uint32_t air_time;
-uint8_t Buffer[BUFFER_SIZE];
+uint8_t calib_packets = 0;			//Counter of the calibration packets received
+uint8_t tle_packets = 0;			//Counter of the tle packets received
+uint8_t telemetry_packets = 0;		//Counter of telemetry packets sent
 
-uint8_t calib_packets = 0;	//counter of the calibration packets received
-uint8_t tle_packets = 0;	//counter of the tle packets received
 
 /*
  * To avoid the variables being erased if a reset occurs, we have to store them in the Flash memory
  * Therefore, they have to be declared as a single-element array
  */
-uint8_t count_packet[] = {0};	//To count how many packets have been sent (maximum WINDOW_SIZE)
-uint8_t count_window[] = {0};	//To count the window number
-uint8_t count_rtx[] = {0};		//To count the number of retransmitted packets
-uint8_t i = 0;					//Auxiliar variable for loop
-uint8_t j=0;
-uint8_t k=0;
-uint8_t num_telemetry = 0;
+uint8_t count_packet[] = {0};		//To count how many packets have been sent (maximum WINDOW_SIZE)
+uint8_t count_window[] = {0};		//To count the window number
+uint8_t count_rtx[] = {0};			//To count the number of retransmitted packets
 
-uint64_t ack;					//Information rx in the ACK (FER DESPLAÇAMENTS DSBM)
-uint8_t nack_number;			//Number of the current packet to retransmit
-bool nack;						//True when retransmition necessary
-bool full_window;				//Stop & wait => to know when we reach the limit packet of the window
-bool statemach = true;			//If true, comms workflow follows the state machine. This value should be controlled by OBC
-								//Put true before activating the statemachine thread. Put false before ending comms thread
-bool send_data = false;			//If true, the state machin send packets every airtime
-bool send_telemetry = false;
-uint8_t telemetry_packets = 0;
-bool contingency = false;
+uint8_t i = 0;						//variable for loops
+uint8_t j=0;						//variable for loops
+uint8_t k=0;						//variable for loops
 
-//uint8_t Buffer[BUFFER_SIZE];
-//bool PacketReceived = false;
-//bool RxTimeoutTimerIrqFlag = false;
+uint64_t ack;						//Information rx in the ACK (0 => ack, 1 => nack)
+uint8_t nack_number;				//Number of the current packet to retransmit
+bool nack;							//True when retransmission necessary
+bool full_window;					//Stop & wait => to know when we reach the limit packet of the window
+bool statemach = true;				//If true, comms workflow follows the state machine. This value should be controlled by OBC
+									//Put true before activating the statemachine thread. Put false before ending comms thread
 
+
+bool send_data = false;				//If true, the state machine send packets every airtime
+bool send_telemetry = false;		//If true, we have to send telemetry packets instead of payload data
+uint8_t num_telemetry = 0;			//Total of telemetry packets that have to be sent (computed when telecomand send telemetry received)
+bool contingency = false;			//True if we are in contingency state => only receive
 
 /*
- * STATE MACHINE VARIABLES
+ * STATE MACHINE VARIABLES AND DEFINITIONS
  */
+
+//Possible states
 typedef enum
 {
     LOWPOWER,
@@ -90,6 +86,7 @@ typedef enum
     START_CAD,
 }States_t;
 
+//Possible CAD events
 typedef enum
 {
     CAD_FAIL,
@@ -97,22 +94,22 @@ typedef enum
     PENDING,
 }CadRx_t;
 
-States_t State = LOWPOWER;
+States_t State = LOWPOWER;				//Variable to store the current state
 
-int8_t RssiValue = 0;
-int8_t SnrValue = 0;
+int8_t RssiValue = 0;					//Rssi computed value
+int8_t SnrValue = 0;					//SNR computed value
 
-CadRx_t CadRx = CAD_FAIL;
-bool PacketReceived = false;
-bool RxTimeoutTimerIrqFlag = false;
-int16_t RssiMoy = 0;
-int8_t SnrMoy = 0;
-uint16_t RxCorrectCnt = 0;
-uint16_t BufferSize = BUFFER_SIZE;
+CadRx_t CadRx = CAD_FAIL;				//Current CAD state
+bool PacketReceived = false;			//To know if a packet have been received or not
+bool RxTimeoutTimerIrqFlag = false;		//Flag to know if there has been any interruption
+int16_t RssiMoy = 0;					//Rssi stored value
+int8_t SnrMoy = 0;						//SNR stored value
+uint16_t RxCorrectCnt = 0;				//Counter of correct received packets
+uint16_t BufferSize = BUFFER_SIZE;		//Buffer size
 
-
-TimerEvent_t CADTimeoutTimer;
-TimerEvent_t RxAppTimeoutTimer;
+//TIMERS
+TimerEvent_t CADTimeoutTimer;			//CAD timer
+TimerEvent_t RxAppTimeoutTimer;			//Reception Timer
 
 
 /**************************************************************************************
@@ -126,7 +123,7 @@ TimerEvent_t RxAppTimeoutTimer;
  **************************************************************************************/
 void configuration(void){
 
-	Radio.Init( &RadioEvents );	//SHOULD THIS BE IN MAIN???
+	Radio.Init( &RadioEvents );
 
 	Radio.SetChannel( RF_FREQUENCY );
 
@@ -150,12 +147,12 @@ void configuration(void){
 	//Air time calculus
 	air_time = Radio.TimeOnAir( MODEM_LORA , PACKET_LENGTH );
 
-	Flash_Read_Data( COUNT_PACKET_ADDR , &count_packet , sizeof(count_packet) );		//Read from Flash count_packet
+	Flash_Read_Data( COUNT_PACKET_ADDR , &count_packet , sizeof(count_packet) );	//Read from Flash count_packet
 	Flash_Read_Data( COUNT_WINDOW_ADDR , &count_window , sizeof(count_window) ); 	//Read from Flash count_window
-	Flash_Read_Data( COUNT_RTX_ADDR , &count_rtx , sizeof(count_rtx) ); 		//Read from Flash count_rtx
-	ack = 0xFFFFFFFFFFFFFFFF;
+	Flash_Read_Data( COUNT_RTX_ADDR , &count_rtx , sizeof(count_rtx) ); 			//Read from Flash count_rtx
+	ack = 0xFFFFFFFFFFFFFFFF;														//Initially confifured 111..111
 	nack = false;
-	//State = RX;
+	State = RX;
 
 };
 
@@ -175,9 +172,9 @@ void tx_function(void){
 	{
 		packaging(); //Start the TX by packaging all the data that will be transmitted
 		Radio.Send( Buffer, BUFFER_SIZE );
-		Flash_Write_Data( COUNT_PACKET_ADDR , &count_packet , sizeof(count_packet) );		//Read from Flash count_packet
+		Flash_Write_Data( COUNT_PACKET_ADDR , &count_packet , sizeof(count_packet) );	//Read from Flash count_packet
 		Flash_Write_Data( COUNT_WINDOW_ADDR , &count_window , sizeof(count_window) ); 	//Read from Flash count_window
-		Flash_Write_Data( COUNT_RTX_ADDR , &count_rtx , sizeof(count_rtx) ); 		//Read from Flash count_rtx
+		Flash_Write_Data( COUNT_RTX_ADDR , &count_rtx , sizeof(count_rtx) ); 			//Read from Flash count_rtx
 	}
 };
 
@@ -208,8 +205,7 @@ void rx_function(void){
  *                                                                                    *
  **************************************************************************************/
 void packaging(void){
-	//NACK packets are sent at the beginning of the next window
-	if (nack)
+	if (nack)	//NACK packets are sent at the beginning of the next window
 	{
 		while(i<sizeof(ack))
 		{
@@ -239,7 +235,7 @@ void packaging(void){
 			send_telemetry = false;
 		}
 	}
-	else //no NACKS
+	else //no NACKS nor telemetry
 	{
 		Flash_Read_Data( PHOTO_ADDR + count_window[0]*WINDOW_SIZE*BUFFER_SIZE + (count_packet[0]-count_rtx[0])*BUFFER_SIZE , &Buffer , sizeof(Buffer) );	//Direction in HEX
 		if (count_packet[0] < WINDOW_SIZE - 1)
@@ -266,7 +262,6 @@ void packaging(void){
  *  returns: nothing									                              *
  *                                                                                    *
  **************************************************************************************/
-/*This function is called when a new photo is stored in the last photo position*/
 void resetCommsParams(void){
 	count_packet[0] = 0;
 	count_window[0] = 0;
@@ -343,7 +338,7 @@ void stateMachine(void){
 				if( PacketReceived == true )
 				{
 					PacketReceived = false;     // Reset flag
-					RxCorrectCnt++;         // Update RX counter
+					RxCorrectCnt++;         	// Update RX counter
 					#if(FULL_DBG)
 						printf( "Rx Packet n %d\r\n", PacketCnt );
 					#endif
@@ -353,7 +348,6 @@ void stateMachine(void){
 				{
 					if (CadRx == CAD_SUCCESS)
 					{
-						//PUT HERE THE CODE TO WITHDRAW THE INFO FROM THE BUFFER
 						process_telecommand(Buffer[0], Buffer[1]);	//We send the buffer to be used only in the cases of info = 1 byte
 						//channelActivityDetectedCnt++;   // Update counter
 						#if(FULL_DBG)
@@ -612,8 +606,6 @@ void setContingency(bool cont){
 void process_telecommand(uint8_t header, uint8_t info) {
 	switch(header) {
 	case RESET2:
-		/*Segons el drive s'ha de fer el reset si val 1 el bit, així que potser
-		 * s'hauria de posar un if*/
 		HAL_NVIC_SystemReset();
 		break;
 	case NOMINAL:
@@ -664,10 +656,6 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		break;
 	}
 	case SENDTELEMETRY:{
-		/*
-		Flash_Read_Data( TELEMETRY_ADDR , &Buffer , sizeof(Buffer) );
-		Radio.Send( Buffer, BUFFER_SIZE );	//WE are not in the state machine => what happens if there is an error sending???
-		*/
 		if (!contingency){
 			send_telemetry = true;
 			num_telemetry = (uint8_t) 34/BUFFER_SIZE + 1; //cast to integer to erase the decimal part
@@ -751,10 +739,9 @@ void process_telecommand(uint8_t header, uint8_t info) {
 	case INTEGRATION_TIME:
 		Write_Flash(INTEGRATION_TIME_ADDR, &info, 1);
 		break;
-	case SEND_CONFIG:{ //semicolon added in order to be able to declare SF here
+	case SEND_CONFIG:{
 		uint8_t config[CONFIG_SIZE];
 		Read_Flash(CONFIG_ADDR, &config, CONFIG_SIZE);
-		//Send()
 		break;
 	}
 	}
