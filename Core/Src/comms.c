@@ -34,8 +34,6 @@
  * MATRIX OF READ-SALOMON => FADING IN SEVERAL PACKETS
  * SF AND CRC STORED IN MEMORY AND CHANGED BY TELECOMMANDS
  * send sf and crc at telemetry packet
- * THINK TELEMETRY PACKET!!!!!!!!!!
- * If stop sending in the middle of a window => set to zero count_packet[]
  * CAD_TIMER_TIMEOUT => CHANGE THE VALUE IN COMMS.H (and the next 6 definitions too)
  * When we call tx_function, there is an implicit loop to tx all the packets?? Check it
  */
@@ -116,35 +114,16 @@ uint16_t BufferSize = BUFFER_SIZE;
 TimerEvent_t CADTimeoutTimer;
 TimerEvent_t RxAppTimeoutTimer;
 
-/*
- *  ---------------- END ----------------
- */
 
-
-
-/* NO SE ON HO HAURIA DE POSAR PERO BUENO DE MOMENT AQUI ESTÀ:
- * PD: Al document TELECOMMANDS & TELEMTRY està tot definit i amb dibujitos ya, qualsevol cosa la podem arreglar
- *
- * uint8_t telecommand[UPLINK_BUFFER_SIZE];
- * bool sendConfig = false;
- * bool sendTelemetry = false;
- *
- * telecommand = Buffer;    // AQUI ALGO NO EM QUADRA GENS, SI TX I RX TENEN EL MATEIX BUFFER PERO ELS PAQUETS SON DIFERENTS AIXO PETARÀ PER TOT ARREU
- * if(telecommand[UPLINK_BUFFER_SIZE] == ACK_DATA){     //Telecommand[UPLINK_BUFFER_SIZE] mira l'ultim byte de info del packet telecommand, que es on esta el codi ID del telecommand (ho he decidit aixi per comoditat)
- * 		//Si hem rebut un ACK:
- * 		for(i=0; i<ACK_PAYLOAD_LENGTH; i++){
- * 			ack[i] = telecommand[i];
- * 		}
- * }
- * else if(telecommand[UPLINK_BUFFER_SIZE] == SEND_CONFIG){
- * 		sendConfig = true;  //This will trigger the TX function to send the config packet first
- * }
- * else if(telecommand[UPLINK_BUFFER_SIZE] == SEND_TELEMETRY){
- * 		sendTelemetry = true;
- * }
- *
- */
-
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  configuration		                                                  *
+ * 	--------------------                                                              *
+ * 	function to configure the transceiver and the transmission protocol parameters    *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void configuration(void){
 
 	Radio.Init( &RadioEvents );	//SHOULD THIS BE IN MAIN???
@@ -180,21 +159,21 @@ void configuration(void){
 
 };
 
-//CAD: CHANNEL ACTIVITY DETECTED
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  tx_function			                                                  *
+ * 	--------------------                                                              *
+ * 	function to transmit the next packet											  *
+ * 																					  *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void tx_function(void){
 	//configuration();
 	if (!full_window)
 	{
-		/*if(sendConfig == true){
-		 *  TX el packet que estigui a la posicio de memoria de sendConfig
-		 *  sendConfig = false; //cal comprovar que GS l'ha rebut ok?
-		 *else if(sendTelemetry == true){
-		 *	TX el packet que estigui a la posicio de memoria de sendTelemetry
-		 *	sendTelemetry = false; //cal comprovar que GS l'ha rebut ok?
-		 */
 		packaging(); //Start the TX by packaging all the data that will be transmitted
-		//SX126xSetPayload(); //Aquesta fa el writebuffer, sha de posar direccions com a la pag 48 del datasheet
 		Radio.Send( Buffer, BUFFER_SIZE );
 		Flash_Write_Data( COUNT_PACKET_ADDR , &count_packet , sizeof(count_packet) );		//Read from Flash count_packet
 		Flash_Write_Data( COUNT_WINDOW_ADDR , &count_window , sizeof(count_window) ); 	//Read from Flash count_window
@@ -203,15 +182,33 @@ void tx_function(void){
 };
 
 
-/* I THINK THAT THIS FUNCTION IS NOT NEEDED*/
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  rx_function              		                                      *
+ *  --------------------                                                              *
+ * 	to receive a packet detected												      *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void rx_function(void){
 	Radio.Rx( RX_TIMEOUT_VALUE );
 
 };
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  packaging                                                   			  *
+ * --------------------                                                               *
+ * 	to store in Buffer the next packet to send (taking into account that it could be  *
+ * 	data coming from the payload, telemetry or a retransmission of a packet from the  *
+ * 	last windows																	  *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void packaging(void){
-	//NACK packets at the beginnig of the next window
-
+	//NACK packets are sent at the beginning of the next window
 	if (nack)
 	{
 		while(i<sizeof(ack))
@@ -258,7 +255,17 @@ void packaging(void){
 	}
 };
 
-
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  resetCommsParams                                                       *
+ * 	--------------------                                                              *
+ * 	This function is called when a new photo is stored in the last photo position,	  *
+ * 	and we have to send the new photo (the old one is not necessary, otherwise we 	  *
+ * 	would have not received a send photo telecommand)								  *																					      *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 /*This function is called when a new photo is stored in the last photo position*/
 void resetCommsParams(void){
 	count_packet[0] = 0;
@@ -266,7 +273,23 @@ void resetCommsParams(void){
 	count_rtx[0] 	= 0;
 }
 
-
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  stateMachine			                                                  *
+ * 	--------------------                                                              *
+ * 	communication process state machine												  *
+ * 	States:																			  *
+ * 	- RX_TIMEOUT: when the reception ends 											  *
+ * 	- RX_ERROR: when an error in the reception process occurs						  *
+ * 	- RX: when a packet has been received											  *
+ * 	- TX: to transmit a packet														  *
+ * 	- TX_TIMEOUT: when the transmission ends										  *
+ * 	- START_CAD: to detect channel activity (necessary to receive packets correctly)  *
+ * 	- LOWPOWER: when the transceiver is not transmitting nor receiving				  *
+ * 																				      *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void stateMachine(void){
     uint16_t PacketCnt = 0;
 
@@ -402,19 +425,36 @@ void stateMachine(void){
 }
 
 
-
-
-/*
- * FUNCTIONS OBTAINED FROM EXAMPLE MAIN.C
- */
-
-
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  OnTxDone   				                                              *
+ * 	--------------------                                                              *
+ * 	when the transmission finished correctly									      *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void OnTxDone( void )
 {
     Radio.Standby( );
     State = TX;
 }
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  OnRxDone			                                                      *
+ * 	--------------------                                                              *
+ * 	processes the information when the reception has been done correctly			  *
+ * 	calculates the rssi and snr													      *
+ *                                                                                    *
+ *  payload: information received			                                          *
+ *  size: size of the payload								  						  *
+ *  rssi: rssi value																  *
+ *  snr: snr value					         										  *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
 {
     Radio.Standby( );
@@ -428,12 +468,30 @@ void OnRxDone( uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr )
     State = RX;
 }
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  OnTxTimeout             			                                      *
+ * 	--------------------                                                              *
+ * 	to process transmission timeout												      *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void OnTxTimeout( void )
 {
     Radio.Standby( );
     State = TX_TIMEOUT;
 }
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  OnRxTimeout                                     			              *
+ * 	--------------------                                                              *
+ * 	to process reception timeout													  *
+ * 																					  *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void OnRxTimeout( void )
 {
     Radio.Standby( );
@@ -452,12 +510,32 @@ void OnRxTimeout( void )
     }
 }
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  OnRxError                                   				              *
+ * 	--------------------                                                              *
+ * 	function called when a reception error occurs									  *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void OnRxError( void )
 {
     Radio.Standby( );
     State = RX_ERROR;
 }
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  OnCadDone                                                  			  *
+ * 	--------------------                                                              *
+ * 	Function to check if the CAD has been done correctly or not						  *
+ *                                                                                    *
+ *  channelActivityDetected: boolean that contains the CAD flat                       *
+ *																					  *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void OnCadDone( bool channelActivityDetected)
 {
     Radio.Standby( );
@@ -473,17 +551,46 @@ void OnCadDone( bool channelActivityDetected)
     State = RX;
 }
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  CADTimeoutTimeoutIrq                                                   *
+ * 	--------------------                                                              *
+ * 	Function called automatically when a Channel Activity Detected (CAD) Irq occurs   *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 static void CADTimeoutTimeoutIrq( void )
 {
     Radio.Standby( );
     State = START_CAD;
 }
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  RxTimeoutTimerIrq                                                      *
+ * 	--------------------                                                              *
+ * 	Function called automatically when a Timeout interruption (Irq) occurs 			  *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 static void RxTimeoutTimerIrq( void )
 {
     RxTimeoutTimerIrqFlag = true;
 }
 
+/**************************************************************************************
+ *                                                                                    *
+ * 	Function:  setContingency                                     		              *
+ * 	--------------------                                                              *
+ *  Sets the value of contingency true or false										  *
+ *																					  *
+ *  cont: value to set contingency (true or false)                                    *
+ *                                                                                    *
+ *  returns: nothing									                              *
+ *                                                                                    *
+ **************************************************************************************/
 void setContingency(bool cont){
 	contingency = cont;
 }
@@ -491,10 +598,10 @@ void setContingency(bool cont){
 
 /**************************************************************************************
  *                                                                                    *
- * Function:  process_telecommand                                                     *
+ * 	Function:  process_telecommand                                                    *
  * --------------------                                                               *
- * processes the information contained in the packet depending on the telecommand     *
- * received																	          *
+ * 	processes the information contained in the packet depending on the telecommand    *
+ * 	received																	      *
  *                                                                                    *
  *  header: number of telecommand			                                          *
  *  info: information contained in the received packet								  *
@@ -502,7 +609,6 @@ void setContingency(bool cont){
  *  returns: nothing									                              *
  *                                                                                    *
  **************************************************************************************/
-//ADD THIS TO COMMS.C
 void process_telecommand(uint8_t header, uint8_t info) {
 	switch(header) {
 	case RESET2:
@@ -569,9 +675,11 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		}
 		break;
 	}
-	case STOPSENDINGDATA:
+	case STOPSENDINGDATA:{
 		send_data = false;
+		count_packet[0] = 0;
 		break;
+	}
 	case ACKDATA:{
 		//check it
 	 	 ack = ack & Buffer[1];
