@@ -339,6 +339,7 @@ void stateMachine(void){
 				{
 					PacketReceived = false;     // Reset flag
 					RxCorrectCnt++;         	// Update RX counter
+					process_telecommand(Buffer[0], Buffer[1]);	//We send the buffer to be used only in the cases of info = 1 byte
 					#if(FULL_DBG)
 						printf( "Rx Packet n %d\r\n", PacketCnt );
 					#endif
@@ -348,7 +349,6 @@ void stateMachine(void){
 				{
 					if (CadRx == CAD_SUCCESS)
 					{
-						process_telecommand(Buffer[0], Buffer[1]);	//We send the buffer to be used only in the cases of info = 1 byte
 						//channelActivityDetectedCnt++;   // Update counter
 						#if(FULL_DBG)
 							printf( "Rxing\r\n");
@@ -423,7 +423,7 @@ void stateMachine(void){
  *                                                                                    *
  * 	Function:  OnTxDone   				                                              *
  * 	--------------------                                                              *
- * 	when the transmission finished correctly									      *
+ * 	when the transmission finish correctly										      *
  *                                                                                    *
  *  returns: nothing									                              *
  *                                                                                    *

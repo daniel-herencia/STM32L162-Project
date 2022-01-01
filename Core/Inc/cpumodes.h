@@ -15,9 +15,9 @@
 #endif /* INC_CPUMODES_H_ */
 
 
-enum MachineState {INIT, IDLE, PAYLOAD, CONTINGENCY, SUNSAFE, SURVIVAL, COMMS};
-uint8_t currentState;
-uint8_t previousState;
+//enum MachineState {INIT, IDLE, PAYLOAD, CONTINGENCY, SUNSAFE, SURVIVAL, COMMS};
+//uint8_t currentState;
+//uint8_t previousState;
 
 void enter_LPRun_Mode(void);
 
