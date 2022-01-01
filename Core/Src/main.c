@@ -52,6 +52,8 @@ SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart4;
 
+uint8_t telecommand_aux;
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -116,6 +118,118 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  switch (currentState) {
+
+	  case CONTINGENCY://we enter low power run mode here
+
+	  	  Read_Flash(EXIT_LOW_ADDR, &telecommand_aux, 1);//ha de ser igual a llegir de memoria el EXIT_LOW_ADDR => with & or without?
+
+		  if (previousState == INIT || previousState == IDLE || previousState == PAYLOAD || previousState == CONTINGENCY || (previousState == COMMS && telecommand_aux == 0)){ //if we come form any of these state check the batteries and decide which the next state will be
+
+			  if (checkbatteries()<= NOMINAL && checkbatteries() >= LOW){ //if batteries are between those values stay on contingency
+				  enter_LPRun_Mode();
+				  currentState = COMMS;
+				  previousState = CONTINGENCY;
+			  }
+			  else if (checkbatteries() <=LOW && checkbatteries() >= CRITICAL){//if batteries are between those values move to susnafe
+				  currentState = SUNSAFE;
+				  previousState = CONTINGENCY;
+			  }
+			  else { //if batteries are below the critical level move to the survival state
+				  currentState = SURVIVAL;
+				  previousState = CONTINGENCY;
+			  }
+		  }
+		  else if (previousState = COMMS && telecommand_aux == 1){ //we get to the CONTINGENCY state coming from COMMS when the awake telecommand is received
+
+			  exit_LPRun_Mode();
+			  if (checkbatteries() >= NOMINAL + threshold){ //look whether the batteries are OK or not to mover or not to IDLE
+
+				  currentState = IDLE;
+				  previousState = CONTINGENCY;
+
+			  }
+			  else if (checkbatteries()<=NOMINAL && checkbatteries()>= LOW){ //batteries have not increased but neither decreased, so we stay on contingency
+
+				  currentState = CONTINGENCY;
+				  previousState = CONTINGENCY;
+
+			  }
+			  else { //batteries have decreased, so we move to the sunsafe state
+
+				  currentState = SUNSAFE;
+				  previousState = CONTINGENCY;
+			  }
+
+		  }
+		  else if (previousState == SUNSAFE){ //check the batteries when coming from the sunsafe state
+
+			  if (checkbatteries()>= NOMINAL + threshold){//threshold is not defined yet, but if batteries are higher than nominal plus that threshold move to IDLE
+				  currentState = IDLE;
+				  previousState = CONTINGENCY;
+
+			  }
+			  else if (checkbatteries()<=NOMINAL && checkbatteries()>= LOW){//if batteries are kept between those values stay on contingency
+
+				  currentState = CONTINGENCY;
+				  previousState = CONTINGENCY;
+
+			  }
+		  }
+		  else if (previousState == SURVIVAL){ //check the batteries when coming from the survival state
+
+			  if (checkbatteries() >= CRITICAL && checkbatteries() <= LOW){ // if batteries are between low and critical move to sunsafe
+				  currentState = SUNSAFE;
+				  previousState = CONTINGENCY;
+			  }
+			  else if (checkbatteries() >= LOW && checkbatteries() <= NOMINAL){ // if batteries are between nominal and low stay on contingency
+				  currentState = CONTINGENCY;
+				  previousState = CONTINGENCY;
+			  }
+			  else if(checkbatteries() >= NOMINAL + threshold) { //threshold is not defined yet, but if batteries are higher than nominal plus that threshold move to IDLE
+				  currentState = IDLE;
+				  previousState = CONTINGENCY;
+			  }
+		  }
+
+	  break;
+
+	  case SUNSAFE: //we enter Sleep mode
+
+		  while (checkbatteries() <= LOW + threshold_low && checkbatteries() >= CRITICAL){ //if we are kept between those values it means we have not increased that much and neither decreased
+
+			  MX_IWDG_Init(); //IDWG initialization
+			  previousState = SUNSAFE;
+			  HAL_PWR_EnterSLEEPMode(PWR_LOWPOWERREGULATOR_ON, PWR_SLEEPENTRY_WFI);//predetermined function to enter Sleep mode
+			  HAL_Delay(33000); //delay higher than the IWDG refreshing time so that we start again
+		  }
+		  if (checkbatteries() >= LOW + threshold_low){ //threshold_low not defined yet
+			  currentState = CONTINGENCY;
+			  previousState = SUNSAFE;
+		  }
+		  else {
+			  currentState = SURVIVAL;
+			  previousState = SUNSAFE;
+		  }
+
+	  break;
+
+	  case SURVIVAL: //we enter Low Power Sleep mode
+
+		  while (checkbatteries() <= CRITICAL ){
+
+			  MX_IWDG_Init();
+			  previousState = SURVIVAL;
+			  enter_LPSleep_Mode();
+			  HAL_Delay(33000); //delay higher than the IWDG refreshing time so that we start again
+		  }
+		  //we will enter this next two lines just when we do not enter the while (because of the IDWG)
+		  currentState = CONTINGENCY;
+		  previousState = SURVIVAL;
+
+	  break;
+
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

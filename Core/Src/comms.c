@@ -617,9 +617,11 @@ void process_telecommand(uint8_t header, uint8_t info) {
 	case CRITICAL:
 		Write_Flash(CRITICAL_ADDR, &info, 1);
 		break;
-	case EXIT_LOW_POWER:
+	case EXIT_LOW_POWER:{
 		Write_Flash(EXIT_LOW_POWER_FLAG_ADDR, &info, 1);
+		Write_Flash(EXIT_LOW_ADDR, TRUE, 1);
 		break;
+	}
 	case SET_TIME:{
 		uint8_t time[4];
 		for (k=0; k<4; k++){
