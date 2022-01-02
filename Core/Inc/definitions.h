@@ -30,6 +30,8 @@
 
 #define DELAY_CAMERA 2500 /*Initial operation process*/
 
+#define THRESHOLD 3
+
 /*Telecommands*/
 
 /*OBC*/

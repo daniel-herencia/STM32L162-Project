@@ -46,17 +46,13 @@ DAC_HandleTypeDef hdac;
 
 I2C_HandleTypeDef hi2c1;
 
+IWDG_HandleTypeDef hiwdg;
+
 RTC_HandleTypeDef hrtc;
 
 SPI_HandleTypeDef hspi2;
 
 UART_HandleTypeDef huart4;
-
-uint8_t telecommand_aux;
-
-uint8_t threshold = 3;
-
-uint8_t percentatge;
 
 /* USER CODE BEGIN PV */
 
@@ -71,6 +67,7 @@ static void MX_I2C1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_UART4_Init(void);
+static void MX_IWDG_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -102,6 +99,8 @@ int main(void)
   bool payload_state; //bool which indicates when do we need to go to PAYLOAD state
   bool comms_state; //bool which indicates if we are in region of contact with GS, then go to COMMS state
 
+  uint8_t percentatge;
+  uint8_t telecommand_aux;
 
   /* USER CODE END Init */
 
@@ -120,6 +119,7 @@ int main(void)
   MX_RTC_Init();
   MX_SPI2_Init();
   MX_UART4_Init();
+  MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
   //stateMachine();
   /* USER CODE END 2 */
@@ -221,7 +221,7 @@ int main(void)
 		  	      Read_Flash(BATT_LEVEL_ADDR, &percentatge, 1);
 		  	      Read_Flash(EXIT_LOW_ADDR, &telecommand_aux, 1);
 
-				  if (percentatge >= NOMINAL + threshold){ //look whether the batteries are OK or not to mover or not to IDLE
+				  if (percentatge >= NOMINAL + THRESHOLD){ //look whether the batteries are OK or not to mover or not to IDLE
 
 					  currentState = IDLE;
 
@@ -239,7 +239,7 @@ int main(void)
 			  }
 			  else if (previousState == SUNSAFE){ //check the batteries when coming from the sunsafe state
 
-				  if (percentatge >= NOMINAL + threshold){
+				  if (percentatge >= NOMINAL + THRESHOLD){
 					  currentState = IDLE;
 
 				  }
@@ -257,7 +257,7 @@ int main(void)
 				  else if (percentatge >= LOW && percentatge <= NOMINAL){ // if batteries are between nominal and low stay on contingency
 					  currentState = CONTINGENCY;
 				  }
-				  else if(percentatge >= NOMINAL + threshold) { //threshold is not defined yet, but if batteries are higher than nominal plus that threshold move to IDLE
+				  else if(percentatge >= NOMINAL + THRESHOLD) { //threshold is not defined yet, but if batteries are higher than nominal plus that threshold move to IDLE
 					  currentState = IDLE;
 				  }
 			  }
@@ -276,7 +276,7 @@ int main(void)
 
 			  while (percentatge <= LOW && percentatge >= CRITICAL){ //if we are kept between those values it means we have not increased that much and neither decreased
 
-				  HAL_IWDG_Init(); //IWDG initialization
+				  HAL_IWDG_Init(&hiwdg); //IWDG initialization
 				  previousState = SUNSAFE;
 				  HAL_PWR_EnterSLEEPMode(PWR_LOWPOWERREGULATOR_ON, PWR_SLEEPENTRY_WFI);//predetermined function to enter Sleep mode
 				  HAL_Delay(33000); //delay higher than the IWDG refreshing time so that we start again
@@ -300,7 +300,7 @@ int main(void)
 
 			  while (percentatge <= CRITICAL ){
 
-				  HAL_IDWG_Init();
+				  HAL_IWDG_Init(&hiwdg);
 				  previousState = SURVIVAL;
 				  enter_LPSleep_Mode();
 				  HAL_Delay(33000); //delay higher than the IWDG refreshing time so that we start again
@@ -501,6 +501,34 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief IWDG Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_IWDG_Init(void)
+{
+
+  /* USER CODE BEGIN IWDG_Init 0 */
+
+  /* USER CODE END IWDG_Init 0 */
+
+  /* USER CODE BEGIN IWDG_Init 1 */
+
+  /* USER CODE END IWDG_Init 1 */
+  hiwdg.Instance = IWDG;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
+  hiwdg.Init.Reload = 4095;
+  if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN IWDG_Init 2 */
+
+  /* USER CODE END IWDG_Init 2 */
 
 }
 

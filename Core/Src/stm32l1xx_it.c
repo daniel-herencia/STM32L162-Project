@@ -179,10 +179,10 @@ void PendSV_Handler(void)
   /* USER CODE END PendSV_IRQn 1 */
 }
 
+//THIS FUNCTION HAS BEEN COMMENTED BECAUSE IT IS ALDREADY DEFINED IN BOARD.C
 /**
   * @brief This function handles System tick timer.
   */
-
 //void SysTick_Handler(void)
 //{
   /* USER CODE BEGIN SysTick_IRQn 0 */
