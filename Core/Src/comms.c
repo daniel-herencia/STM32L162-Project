@@ -650,14 +650,14 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		/*4 possibles estats, rebrem 00/01/10/11*/
 		Write_Flash(GYRO_RES_ADDR, &info, 1);
 		break;
-	case SENDDATA:{
+	case SEND_DATA:{
 		if (!contingency){
 			State = TX;
 			send_data = true;
 		}
 		break;
 	}
-	case SENDTELEMETRY:{
+	case SEND_TELEMETRY:{
 		if (!contingency){
 			send_telemetry = true;
 			num_telemetry = (uint8_t) 34/BUFFER_SIZE + 1; //cast to integer to erase the decimal part
@@ -665,12 +665,12 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		}
 		break;
 	}
-	case STOPSENDINGDATA:{
+	case STOP_SENDING_DATA:{
 		send_data = false;
 		count_packet[0] = 0;
 		break;
 	}
-	case ACKDATA:{
+	case ACK_DATA:{
 		//check it
 	 	 ack = ack & Buffer[1];
 		 for(j=2; j<ACK_PAYLOAD_LENGTH; j++){
@@ -684,7 +684,7 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		 State = TX;
 		break;
 	}
-	case SET_SF: {
+	case SET_SF_CR: {
 		uint8_t SF;
 		if (info == 0) SF = 7;
 		else if (info == 1) SF = 8;
@@ -693,12 +693,10 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		else if (info == 4) SF = 11;
 		else if (info == 5) SF = 12;
 		Write_Flash(SF_ADDR, &SF, 1);
+		/*4 cases (4/5, 4/6, 4/7,1/2), so we will receive and store 0, 1, 2 or 3*/
+		Write_Flash(CRC_ADDR, &Buffer[2], 1);
 		break;
 	}
-	case SET_CRC:
-		/*4 cases (4/5, 4/6, 4/7,1/2), so we will receive and store 0, 1, 2 or 3*/
-		Write_Flash(CRC_ADDR, &info, 1);
-		break;
 	case SEND_CALIBRATION:{	//Rx calibration
 		uint8_t calib[UPLINK_BUFFER_SIZE-1];
 		for (k=1; k<UPLINK_BUFFER_SIZE; k++){
@@ -712,38 +710,27 @@ void process_telecommand(uint8_t header, uint8_t info) {
 		}
 		break;
 	}
-	case TAKEPHOTO:{
+	case TAKE_PHOTO:{
 		/*GUARDAR TEMPS FOTO?*/
 		Write_Flash(PAYLOAD_STATE_ADDR, TRUE, 1);
 		Write_Flash(PL_TIME_ADDR, &info, 4);
+		Write_Flash(PHOTO_RESOL_ADDR, &Buffer[5], 1);
+		Write_Flash(PHOTO_COMPRESSION_ADDR, &Buffer[6], 1);
 		break;
 	}
-	case SET_PHOTO_RESOL:
-		Write_Flash(PHOTO_RESOL_ADDR, &info, 1);
-		break;
-	case PHOTO_COMPRESSION:
-		Write_Flash(PHOTO_COMPRESSION_ADDR, &info, 1);
-		break;
-	case TAKERF:{
+	case TAKE_RF:{
 		Write_Flash(PAYLOAD_STATE_ADDR, TRUE, 1);
-		Write_Flash(PL_TIME_ADDR, &info, 4);
+		Write_Flash(PL_TIME_ADDR, &info, 8);
+		Write_Flash(F_MIN_ADDR, &Buffer[9], 1);
+		Write_Flash(F_MAX_ADDR, &Buffer[10], 1);
+		Write_Flash(DELTA_F_ADDR, &Buffer[11], 1);
+		Write_Flash(INTEGRATION_TIME_ADDR, &Buffer[12], 1);
 		break;
 	}
-	case F_MIN:
-		Write_Flash(F_MIN_ADDR, &info, 2);
-		break;
-	case F_MAX:
-		Write_Flash(F_MAX_ADDR, &info, 2);
-		break;
-	case DELTA_F:
-		Write_Flash(DELTA_F_ADDR, &info, 2);
-		break;
-	case INTEGRATION_TIME:
-		Write_Flash(INTEGRATION_TIME_ADDR, &info, 1);
-		break;
 	case SEND_CONFIG:{
 		uint8_t config[CONFIG_SIZE];
 		Read_Flash(CONFIG_ADDR, &config, CONFIG_SIZE);
+		Radio.Send( config, CONFIG_SIZE );
 		break;
 	}
 	}

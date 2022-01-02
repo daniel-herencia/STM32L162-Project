@@ -52,26 +52,26 @@
 
 
 /*COMMS*/
-#define SENDDATA  			20	/*If the acquired photo or spectogram is needed to be send to GS*/
-#define SENDTELEMETRY  		21
-#define STOPSENDINGDATA  	22
-#define ACKDATA  			23	/*It is received when all the data is received correctly*/
-#define SET_SF				24
-#define SET_CRC				25
-#define SEND_CALIBRATION	26
+#define SEND_DATA  			20	/*If the acquired photo or spectogram is needed to be send to GS*/
+#define SEND_TELEMETRY 		21
+#define STOP_SENDING_DATA  	22
+#define ACK_DATA  			23	/*It is received when all the data is received correctly*/
+#define SET_SF_CR			24
+//#define SET_CRC			25
+#define SEND_CALIBRATION	25
 
 /*CAMARA*/
-#define TAKEPHOTO 			30	/*Might rotate the PQ into the right position +
+#define TAKE_PHOTO 			30	/*Might rotate the PQ into the right position +
 								wait until it is in the position where the picture is wanted to be taken.*/
-#define SET_PHOTO_RESOL		31	//Photo Resolution
-#define PHOTO_COMPRESSION   32
+//#define SET_PHOTO_RESOL	31	//Photo Resolution
+//#define PHOTO_COMPRESSION 32
 
 /*PAYLOAD 2: ELECTROSMOG ANTENNA*/
-#define TAKERF  			40
-#define F_MIN				41
-#define F_MAX				42
-#define DELTA_F				43
-#define INTEGRATION_TIME	44
+#define TAKE_RF  			40
+//#define F_MIN				41
+//#define F_MAX				42
+//#define DELTA_F			43
+//#define INTEGRATION_TIME	44
 
 
 #define SEND_CONFIG			50	//Send all configuration
