@@ -152,18 +152,21 @@ int main(void)
 			}
 			break;
 
-		/*Is needed to listen periodically with the receiver or timer from IDLE state? -> COMMS part*/
-		case COMMS:	// This might refer ONLY refer to TX!!!
-			//configuration();
-			//pthread_create(&thread_comms, NULL, stateMachine(), NULL);
+		case COMMS:
 
+			//If it is the first time we enter in COMMS when getting contact with the Ground station:
+			configuration();
+			//pthread_create(&thread_comms, NULL, stateMachine(), NULL);	//INITIALIZE COMMS THREAD
 			stateMachine();	//this line must be deleted (initialize in thread)
+			//AFTER THAT => NOT ENTER IN COMMS TILL CONTACT TIME WITH GS ENDS
+
+			//WHEN CONTACT TIME ENDS
+			//kill comms thread
+
 
 			/* check if the picture or spectrogram has to be sent and send it if needed */
 			if(!system_state(&hi2c1)) currentState = CONTINGENCY;
 			else if(comms_state); //telecommand(); 	        /* function that receives orders from "COMMS" */
-			//else if(comms_timer_state) sendtelemetry(); /* loop that sends the telemetry data to "COMMS" */
-			//comms_state = false;
 			currentState = IDLE;
 			Write_Flash(PREVIOUS_STATE_ADDR, COMMS, 1);
 			break;
@@ -195,6 +198,8 @@ int main(void)
 
 
 		  case CONTINGENCY://we enter low power run mode here
+
+			  setContingency(true); //for comms to know they are in contingency => only receive
 
 			  if (previousState == INIT || previousState == IDLE || previousState == PAYLOAD || previousState == CONTINGENCY || (previousState == COMMS && telecommand_aux == 0)){ //if we come form any of these state check the batteries and decide which the next state will be
 
@@ -274,6 +279,8 @@ int main(void)
 		  	  checkbatteries(&hi2c1);
 		  	  Read_Flash(BATT_LEVEL_ADDR, &percentatge, 1);
 
+		  	  //END COMMS THREAD HERE
+
 			  while (percentatge <= LOW && percentatge >= CRITICAL){ //if we are kept between those values it means we have not increased that much and neither decreased
 
 				  HAL_IWDG_Init(&hiwdg); //IWDG initialization
@@ -297,6 +304,9 @@ int main(void)
 
 			  checkbatteries(&hi2c1);
 			  Read_Flash(BATT_LEVEL_ADDR, &percentatge, 1);
+
+		  	  //END COMMS THREAD HERE
+
 
 			  while (percentatge <= CRITICAL ){
 
