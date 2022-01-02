@@ -27,12 +27,10 @@
 
 /*------TO DO----------*/
 /*
- * STATE CONTINGENCY ONLY RX => from main setContingency(true)
- * state sunsafe or survival => end comms thread (in main)
- * CHECK SLEEP MODE OF SX1262 WHILE NOT TX OR RX
  * MULTY THREAD
- * MATRIX OF READ-SALOMON => FADING IN SEVERAL PACKETS
+ * MATRIX OF REED-SOLOMON => FADING IN SEVERAL PACKETS
  * Airtime timer
+ *
  */
 
 static RadioEvents_t RadioEvents;	//To handle Radio library functions
