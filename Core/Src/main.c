@@ -54,6 +54,10 @@ UART_HandleTypeDef huart4;
 
 uint8_t telecommand_aux;
 
+uint8_t threshold = 3;
+
+uint8_t percentatge;
+
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -83,7 +87,8 @@ static void MX_UART4_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	initsensors(&hi2c1);
+	currentState = INIT;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -92,6 +97,11 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  pthread_t thread_comms;
+
+  bool payload_state; //bool which indicates when do we need to go to PAYLOAD state
+  bool comms_state; //bool which indicates if we are in region of contact with GS, then go to COMMS state
+
 
   /* USER CODE END Init */
 
@@ -111,122 +121,198 @@ int main(void)
   MX_SPI2_Init();
   MX_UART4_Init();
   /* USER CODE BEGIN 2 */
-  stateMachine();
+  //stateMachine();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  system_state(&hi2c1);
 	  switch (currentState) {
 
-	  case CONTINGENCY://we enter low power run mode here
+		case INIT:
+			init(&hi2c1);
+			Write_Flash(PREVIOUS_STATE_ADDR, INIT, 1);
+			break;
 
-	  	  Read_Flash(EXIT_LOW_ADDR, &telecommand_aux, 1);//ha de ser igual a llegir de memoria el EXIT_LOW_ADDR => with & or without?
+		case IDLE:
+			/* if a telecomand to use the payload/comms is received, go to PAYLOADS/COMMS state */
+			if(!system_state(&hi2c1)) currentState = CONTINGENCY;
+			else {
+				check_position();
+				Read_Flash(PAYLOAD_STATE_ADDR, &payload_state, 1);
+				Read_Flash(COMMS_STATE_ADDR, &comms_state, 1);
+				if(payload_state) currentState = PAYLOAD; /*payload becomes true if a telecommand to acquire data is received*/
+				else if(comms_state)	currentState = COMMS;	/*comms becomes true when we have acquired the data and we need to send it*/
+				sensorReadings(&hi2c1); /*Updates the values of temperatures, voltages and currents*/
+				/*ADCS tasks needed??*/
+				//Add Rx mode here
+				Write_Flash(PREVIOUS_STATE_ADDR, IDLE, 1);
+			}
+			break;
 
-		  if (previousState == INIT || previousState == IDLE || previousState == PAYLOAD || previousState == CONTINGENCY || (previousState == COMMS && telecommand_aux == 0)){ //if we come form any of these state check the batteries and decide which the next state will be
+		/*Is needed to listen periodically with the receiver or timer from IDLE state? -> COMMS part*/
+		case COMMS:	// This might refer ONLY refer to TX!!!
+			//configuration();
+			//pthread_create(&thread_comms, NULL, stateMachine(), NULL);
 
-			  if (checkbatteries()<= NOMINAL && checkbatteries() >= LOW){ //if batteries are between those values stay on contingency
-				  enter_LPRun_Mode();
-				  currentState = COMMS;
-				  previousState = CONTINGENCY;
+			stateMachine();	//this line must be deleted (initialize in thread)
+
+			/* check if the picture or spectrogram has to be sent and send it if needed */
+			if(!system_state(&hi2c1)) currentState = CONTINGENCY;
+			else if(comms_state); //telecommand(); 	        /* function that receives orders from "COMMS" */
+			//else if(comms_timer_state) sendtelemetry(); /* loop that sends the telemetry data to "COMMS" */
+			//comms_state = false;
+			currentState = IDLE;
+			Write_Flash(PREVIOUS_STATE_ADDR, COMMS, 1);
+			break;
+		case PAYLOAD:
+			/* The idea of this state is to modify the coils' current in each iteration
+			 * (when payload_state is true), and once the PQ reaches the final position
+			 * in which the photo will be taken, try to maintain the position until it
+			 * is the correct moment to take the photo
+			 * The code is commented because most variables were not defined and gave
+			 * errors, do not think it's a wrong code! */
+//			if(PHOTO_TIME - /*¿¿*/RCC/*??*/ < threshold) {
+//				rotatePhoto();
+//				if(PHOTO_TIME - /*¿¿*/RCC/*??*/ < small_threshold) {
+//					takePhoto();
+//					resetCommsParams();
+//					Write_Flash(PAYLOAD_STATE_ADDR, FALSE, 1);
+//				}
+//			}
+
+			/*If that checks if the clock's time has passed the Payload time*/
+//			if(/*¿¿*/RCC/*??*/ > PHOTO_TIME) {
+//				Write_Flash(PAYLOAD_STATE_ADDR, FALSE, 1);
+//			}
+
+			currentState = IDLE;
+			if(!system_state(&hi2c1)) currentState = CONTINGENCY;
+			Write_Flash(PREVIOUS_STATE_ADDR, PAYLOAD, 1);
+			break;
+
+
+		  case CONTINGENCY://we enter low power run mode here
+
+			  if (previousState == INIT || previousState == IDLE || previousState == PAYLOAD || previousState == CONTINGENCY || (previousState == COMMS && telecommand_aux == 0)){ //if we come form any of these state check the batteries and decide which the next state will be
+
+				  checkbatteries(&hi2c1); //check the batteries
+		  	  	  Read_Flash(BATT_LEVEL_ADDR, &percentatge, 1); //read the battery level and store it on the percentatge variable
+		  	 	  Read_Flash(EXIT_LOW_ADDR, &telecommand_aux, 1);//read the exit low flag and store it on the telecommand_aux
+
+				  if (percentatge <= NOMINAL && percentatge >= LOW){ //if batteries are between those values stay on contingency
+					  enter_LPRun_Mode();
+					  currentState = COMMS;
+				  }
+				  else if (percentatge <=LOW && percentatge >= CRITICAL){//if batteries are between those values move to susnafe
+					  currentState = SUNSAFE;
+				  }
+				  else { //if batteries are below the critical level move to the survival state
+					  currentState = SURVIVAL;
+				  }
 			  }
-			  else if (checkbatteries() <=LOW && checkbatteries() >= CRITICAL){//if batteries are between those values move to susnafe
-				  currentState = SUNSAFE;
-				  previousState = CONTINGENCY;
-			  }
-			  else { //if batteries are below the critical level move to the survival state
-				  currentState = SURVIVAL;
-				  previousState = CONTINGENCY;
-			  }
-		  }
-		  else if (previousState = COMMS && telecommand_aux == 1){ //we get to the CONTINGENCY state coming from COMMS when the awake telecommand is received
+			  else if (previousState = COMMS && telecommand_aux == 1){ //we get to the CONTINGENCY state coming from COMMS when the awake telecommand is received
 
-			  exit_LPRun_Mode();
-			  if (checkbatteries() >= NOMINAL + threshold){ //look whether the batteries are OK or not to mover or not to IDLE
+				  exit_LPRun_Mode();
 
-				  currentState = IDLE;
-				  previousState = CONTINGENCY;
+				  checkbatteries(&hi2c1);
+		  	      Read_Flash(BATT_LEVEL_ADDR, &percentatge, 1);
+		  	      Read_Flash(EXIT_LOW_ADDR, &telecommand_aux, 1);
 
-			  }
-			  else if (checkbatteries()<=NOMINAL && checkbatteries()>= LOW){ //batteries have not increased but neither decreased, so we stay on contingency
+				  if (percentatge >= NOMINAL + threshold){ //look whether the batteries are OK or not to mover or not to IDLE
 
-				  currentState = CONTINGENCY;
-				  previousState = CONTINGENCY;
+					  currentState = IDLE;
 
-			  }
-			  else { //batteries have decreased, so we move to the sunsafe state
+				  }
+				  else if (percentatge <=NOMINAL && percentatge >= LOW){ //batteries have not increased but neither decreased, so we stay on contingency
 
-				  currentState = SUNSAFE;
-				  previousState = CONTINGENCY;
-			  }
+					  currentState = CONTINGENCY;
 
-		  }
-		  else if (previousState == SUNSAFE){ //check the batteries when coming from the sunsafe state
+				  }
+				  else { //batteries have decreased, so we move to the sunsafe state
 
-			  if (checkbatteries()>= NOMINAL + threshold){//threshold is not defined yet, but if batteries are higher than nominal plus that threshold move to IDLE
-				  currentState = IDLE;
-				  previousState = CONTINGENCY;
+					  currentState = SUNSAFE;
+				  }
 
 			  }
-			  else if (checkbatteries()<=NOMINAL && checkbatteries()>= LOW){//if batteries are kept between those values stay on contingency
+			  else if (previousState == SUNSAFE){ //check the batteries when coming from the sunsafe state
 
-				  currentState = CONTINGENCY;
-				  previousState = CONTINGENCY;
+				  if (percentatge >= NOMINAL + threshold){
+					  currentState = IDLE;
 
+				  }
+				  else if (percentatge <=NOMINAL && percentatge >= LOW){//if batteries are kept between those values stay on contingency
+
+					  currentState = CONTINGENCY;
+
+				  }
 			  }
-		  }
-		  else if (previousState == SURVIVAL){ //check the batteries when coming from the survival state
+			  else if (previousState == SURVIVAL){ //check the batteries when coming from the survival state
 
-			  if (checkbatteries() >= CRITICAL && checkbatteries() <= LOW){ // if batteries are between low and critical move to sunsafe
-				  currentState = SUNSAFE;
-				  previousState = CONTINGENCY;
+				  if (percentatge >= CRITICAL && percentatge <= LOW){ // if batteries are between low and critical move to sunsafe
+					  currentState = SUNSAFE;
+				  }
+				  else if (percentatge >= LOW && percentatge <= NOMINAL){ // if batteries are between nominal and low stay on contingency
+					  currentState = CONTINGENCY;
+				  }
+				  else if(percentatge >= NOMINAL + threshold) { //threshold is not defined yet, but if batteries are higher than nominal plus that threshold move to IDLE
+					  currentState = IDLE;
+				  }
 			  }
-			  else if (checkbatteries() >= LOW && checkbatteries() <= NOMINAL){ // if batteries are between nominal and low stay on contingency
-				  currentState = CONTINGENCY;
-				  previousState = CONTINGENCY;
+
+			  previousState = CONTINGENCY;
+		          Write_Flash(PREVIOUS_STATE_ADDR, CONTINGENCY, 1);
+
+
+
+		  break;
+
+		  case SUNSAFE: //we enter Sleep mode
+
+		  	  checkbatteries(&hi2c1);
+		  	  Read_Flash(BATT_LEVEL_ADDR, &percentatge, 1);
+
+			  while (percentatge <= LOW && percentatge >= CRITICAL){ //if we are kept between those values it means we have not increased that much and neither decreased
+
+				  HAL_IWDG_Init(); //IWDG initialization
+				  previousState = SUNSAFE;
+				  HAL_PWR_EnterSLEEPMode(PWR_LOWPOWERREGULATOR_ON, PWR_SLEEPENTRY_WFI);//predetermined function to enter Sleep mode
+				  HAL_Delay(33000); //delay higher than the IWDG refreshing time so that we start again
 			  }
-			  else if(checkbatteries() >= NOMINAL + threshold) { //threshold is not defined yet, but if batteries are higher than nominal plus that threshold move to IDLE
-				  currentState = IDLE;
-				  previousState = CONTINGENCY;
-			  }
-		  }
+			  if (percentatge >= LOW) currentState = CONTINGENCY;
 
-	  break;
+			  else 	currentState = SURVIVAL;
 
-	  case SUNSAFE: //we enter Sleep mode
-
-		  while (checkbatteries() <= LOW + threshold_low && checkbatteries() >= CRITICAL){ //if we are kept between those values it means we have not increased that much and neither decreased
-
-			  MX_IWDG_Init(); //IDWG initialization
 			  previousState = SUNSAFE;
-			  HAL_PWR_EnterSLEEPMode(PWR_LOWPOWERREGULATOR_ON, PWR_SLEEPENTRY_WFI);//predetermined function to enter Sleep mode
-			  HAL_Delay(33000); //delay higher than the IWDG refreshing time so that we start again
-		  }
-		  if (checkbatteries() >= LOW + threshold_low){ //threshold_low not defined yet
+			  Write_Flash(PREVIOUS_STATE_ADDR, SUNSAFE, 1);
+
+
+
+		  break;
+
+
+		  case SURVIVAL: //we enter Low Power Sleep mode
+
+			  checkbatteries(&hi2c1);
+			  Read_Flash(BATT_LEVEL_ADDR, &percentatge, 1);
+
+			  while (percentatge <= CRITICAL ){
+
+				  HAL_IDWG_Init();
+				  previousState = SURVIVAL;
+				  enter_LPSleep_Mode();
+				  HAL_Delay(33000); //delay higher than the IWDG refreshing time so that we start again
+			  }
+			  //we will enter this next two lines just when we do not enter the while (because of the IDWG)
 			  currentState = CONTINGENCY;
-			  previousState = SUNSAFE;
-		  }
-		  else {
-			  currentState = SURVIVAL;
-			  previousState = SUNSAFE;
-		  }
-
-	  break;
-
-	  case SURVIVAL: //we enter Low Power Sleep mode
-
-		  while (checkbatteries() <= CRITICAL ){
-
-			  MX_IWDG_Init();
 			  previousState = SURVIVAL;
-			  enter_LPSleep_Mode();
-			  HAL_Delay(33000); //delay higher than the IWDG refreshing time so that we start again
-		  }
-		  //we will enter this next two lines just when we do not enter the while (because of the IDWG)
-		  currentState = CONTINGENCY;
-		  previousState = SURVIVAL;
+			  Write_Flash(PREVIOUS_STATE_ADDR, SURVIVAL, 1);
 
+		  break;
+	  default:
+		  /*REBOOT THE SYSTEM*/
 	  break;
 
 	  }

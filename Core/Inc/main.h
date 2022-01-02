@@ -29,12 +29,15 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32l1xx_hal.h"
-#include "cpumodes.h"
-#include "definitions.h"
-#include "comms.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "payload_camera.h"
+#include "comms.h"
+#include "configuration.h"
+#include "sensorReadings.h"
+#include "definitions.h"
+#include "cpumodes.h"
 
 /* USER CODE END Includes */
 

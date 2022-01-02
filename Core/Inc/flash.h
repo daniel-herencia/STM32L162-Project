@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+
 #define PHOTO_ADDR 					0x08020000
 #define PAYLOAD_STATE_ADDR 			0x08008000
 #define COMMS_STATE_ADDR 			0x08008001
@@ -24,6 +25,8 @@
 #define LOW_ADDR 					0x08008009
 #define CRITICAL_ADDR 				0x0800800A
 #define PL_TIME_ADDR 				0x0800800B
+#define PREVIOUS_STATE_ADDR			0x0800800C
+#define EXIT_LOW_ADDR 				0x0800800D
 
 //CONFIGURATION ADDRESSES
 #define CONFIG_ADDR 				0x08008010
